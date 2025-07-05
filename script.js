@@ -1,93 +1,121 @@
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const startBtn = document.getElementById('startBtn');
 
-canvas.width = 400;
-canvas.height = 600;
+canvas.width = 400; canvas.height = 600;
 
-let player = { x: 180, y: 500, width: 40, height: 40 };
-let bullets = [];
-let enemies = [];
-let score = 0;
-let keys = {};
+let gameLoop, score, player, bullets, enemies, particles, keysPressed, isRunning;
 
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
+function init() {
+  score = 0;
+  player = { x: 180, y: 500, w: 40, h: 40, cooldown: 0 };
+  bullets = [];
+  enemies = [];
+  particles = [];
+  keysPressed = {};
+  isRunning = true;
+  scoreEl.textContent = score;
 
-function drawPlayer() {
-  ctx.fillStyle = "cyan";
-  ctx.fillRect(player.x, player.y, player.width, player.height);
+  document.addEventListener('keydown', e => keysPressed[e.key] = true);
+  document.addEventListener('keyup', e => keysPressed[e.key] = false);
+
+  clearInterval(gameLoop);
+  gameLoop = setInterval(update, 1000 / 60);
 }
 
-function drawBullet(bullet) {
-  ctx.fillStyle = "yellow";
-  ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
-}
+function update() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-function drawEnemy(enemy) {
-  ctx.fillStyle = "red";
-  ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
-}
+  // Player movement
+  if (keysPressed.ArrowLeft && player.x > 0) player.x -= 5;
+  if (keysPressed.ArrowRight && player.x + player.w < canvas.width) player.x += 5;
+  if (keysPressed.Space && player.cooldown <= 0) {
+    bullets.push({ x: player.x + 18, y: player.y, w: 4, h: 10 });
+    player.cooldown = 20;
+  }
+  if (player.cooldown > 0) player.cooldown--;
 
-function spawnEnemy() {
-  const x = Math.random() * (canvas.width - 40);
-  enemies.push({ x, y: -40, width: 40, height: 40 });
-}
-
-function updateGame() {
-  // Move player
-  if (keys["ArrowLeft"] && player.x > 0) player.x -= 5;
-  if (keys["ArrowRight"] && player.x + player.width < canvas.width) player.x += 5;
-  if (keys[" "]) {
-    bullets.push({ x: player.x + 18, y: player.y, width: 4, height: 10 });
-    keys[" "] = false;
+  // Spawn enemies
+  if (Math.random() < 0.02) {
+    enemies.push({ x: Math.random() * (canvas.width - 40), y: -40, w: 40, h: 40, speed: 2 + Math.random()*2 });
   }
 
-  // Move bullets
-  bullets.forEach(b => b.y -= 5);
-  bullets = bullets.filter(b => b.y > 0);
+  // Update bullets
+  bullets = bullets.filter(b => {
+    b.y -= 7;
+    return b.y + b.h > 0;
+  });
 
-  // Move enemies
-  enemies.forEach(e => e.y += 2);
-  enemies = enemies.filter(e => e.y < canvas.height);
+  // Update enemies
+  enemies = enemies.filter(e => {
+    e.y += e.speed;
+    if (e.y > canvas.height) return false;
+    return true;
+  });
 
-  // Collision detection
-  bullets.forEach((b, i) => {
-    enemies.forEach((e, j) => {
-      if (b.x < e.x + e.width && b.x + b.width > e.x && b.y < e.y + e.height && b.y + b.height > e.y) {
-        enemies.splice(j, 1);
-        bullets.splice(i, 1);
+  // Collisions + score
+  bullets.forEach((b,i) => {
+    enemies.forEach((e,j) => {
+      if (b.x < e.x + e.w && b.x + b.w > e.x && b.y < e.y + e.h && b.y + b.h > e.y) {
+        bullets.splice(i,1);
+        enemies.splice(j,1);
         score += 10;
-        document.getElementById("score").textContent = score;
+        scoreEl.textContent = score;
+        spawnParticles(e.x + e.w/2, e.y + e.h/2);
       }
     });
   });
 
-  // Game over
+  // Game over?
   enemies.forEach(e => {
-    if (
-      e.x < player.x + player.width &&
-      e.x + e.width > player.x &&
-      e.y < player.y + player.height &&
-      e.y + e.height > player.y
-    ) {
-      alert("Game Over! Score: " + score);
-      document.location.reload();
+    if (e.x < player.x + player.w && e.x + e.w > player.x &&
+        e.y < player.y + player.h && e.y + e.h > player.y) {
+      endGame();
     }
   });
+
+  draw();
+}
+
+function spawnParticles(x,y) {
+  for (let i = 0; i < 20; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5)*4,
+      vy: (Math.random() - 0.5)*4,
+      alpha: 1
+    });
+  }
 }
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawPlayer();
-  bullets.forEach(drawBullet);
-  enemies.forEach(drawEnemy);
+  // Player ship
+  ctx.fillStyle = '#0ff';
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+
+  // Bullets
+  ctx.fillStyle = '#ff0';
+  bullets.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+
+  // Enemies
+  ctx.fillStyle = '#f00';
+  enemies.forEach(e => ctx.fillRect(e.x, e.y, e.w, e.h));
+
+  // Particles
+  particles = particles.filter(p => {
+    p.x += p.vx; p.y += p.vy; p.alpha -= 0.02;
+    if (p.alpha <= 0) return false;
+    ctx.fillStyle = `rgba(255,165,0,${p.alpha})`;
+    ctx.fillRect(p.x, p.y, 4, 4);
+    return true;
+  });
 }
 
-setInterval(spawnEnemy, 1000);
-
-function gameLoop() {
-  updateGame();
-  draw();
-  requestAnimationFrame(gameLoop);
+function endGame() {
+  isRunning = false;
+  clearInterval(gameLoop);
+  alert('Game Over! Score: ' + score);
 }
-gameLoop();
+
+startBtn.addEventListener('click', init);
